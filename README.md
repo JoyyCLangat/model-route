@@ -91,6 +91,67 @@ by `core/router.py` scoring a snapshot of the catalog. The token counts and
 latencies are representative, since the recording was prepared without live
 provider access. Run a live goal to record your own into `runs/latest.jsonl`.
 
+## How it works, step by step
+
+This is the whole process for one task, from the moment an agent picks it up to
+the moment the result comes back. It is exactly what `agents/base.py::run` does,
+and it is the same for every role.
+
+1. **The agent declares what it needs.** A role sets a capability list and a
+   stakes level, and nothing else. The coder needs `code` and `reasoning` at
+   `high` stakes. The summarizer needs `extraction` at `low` stakes. There is
+   no model named anywhere in the role.
+2. **The task is classified into a spec** (`core/classify.py`). The cheapest
+   healthy model reads the task and labels it as JSON: the task type, the
+   capabilities it needs, the size of the input, the stakes, and whether it
+   needs vision. If that call fails or returns junk, a keyword matcher produces
+   the same shape, and the trace records which path ran. So the pipeline works
+   even with zero model calls.
+3. **The agent merges its own needs into the spec.** The classifier's guess and
+   the role's declared needs are combined, and the role's stakes win.
+4. **The router filters out the unfit models** (`core/router.py`, step 1). It
+   drops any model where the context window is too small, the task needs vision
+   and the model has none, the model is unhealthy, free mode is on and the
+   model is not free, or the caller excluded it. Every drop is recorded with
+   its reason.
+5. **The router scores the survivors** (step 2). Each gets a score from 0 to 1
+   built from capability, cost, speed and context fit. The weight on each of
+   those four comes from the stakes, so a low stakes job leans on price and a
+   high stakes job leans on capability. Cost is normalised across the current
+   survivors, so adding a model reshapes the field on its own.
+6. **The router returns the winner and its reasoning.** The decision carries the
+   chosen model, the sub scores for every survivor, and the list of models it
+   filtered out with the reason. No model was asked. Python chose.
+7. **The gateway calls the chosen model** (`core/llm.py`). It returns real cost,
+   latency and token counts, and it never raises. A failure comes back as a
+   plain result, not a crash.
+8. **Health is updated.** A success clears the model's record. A failure counts
+   against it, and two failures in a row take it out of the running for a
+   minute, so a model having a bad moment steps aside.
+9. **A trace event is emitted** (`core/trace.py`). It is appended to
+   `runs/latest.jsonl` and pushed to the live panel. The trace is the demo.
+
+When a reviewer rejects an output, there is one more step: add the failed model
+to an exclude list and go back to step 4. The router then picks again from what
+is left. That is the recovery you see in the recorded run.
+
+### The demo pipeline
+
+`main.py` wires five roles into one run over the goal you pass. Each role runs
+the nine steps above:
+
+1. **Planner.** Breaks the goal into subtasks. High stakes, so capability
+   matters most.
+2. **Researcher.** Reads the target files. Large input, so the router favours a
+   big context window.
+3. **Summarizer.** Condenses the findings. Low stakes and bulk, so the router
+   favours the cheapest model that can do the job.
+4. **Coder.** Writes the patch. High stakes, so capability outweighs price.
+5. **Critic.** Reviews the patch. If it rejects, the coder runs again with the
+   failed model excluded, and the router picks a different one. This repeats up
+   to three times, then the run ends with a summary of cost, time and which
+   model ran each step.
+
 ## The steps
 
 The repo is built in five stages, each a git tag, so you can walk the build
