@@ -1,0 +1,107 @@
+# Benchmark tasks, spread across the categories in core/capabilities.yaml.
+#
+# Each task has an id, a category, the task text, and a short rubric. The
+# rubric is what the judge model reads when it compares two answers. Keep
+# rubrics concrete, because a vague rubric produces a noisy judgement.
+#
+# These are small on purpose, so a full run is cheap. Add your own. The point
+# of the benchmark is that the capability numbers in capabilities.yaml should
+# be replaced by evidence from tasks you care about, not left as a guess.
+
+tasks:
+  - id: code_fix_offbyone
+    category: code
+    task: |
+      This function is meant to sum the price of every item, but it skips the
+      first one. Fix it and return only the corrected function.
+      def total(items):
+          t = 0
+          for i in range(1, len(items)):
+              t += items[i]["price"]
+          return t
+    rubric: "Correct fix starts the range at 0 or iterates items directly. Full working function returned."
+
+  - id: code_mutable_default
+    category: code
+    task: |
+      Explain the bug in this function and give a corrected version.
+      def add_item(name, cart=[]):
+          cart.append(name)
+          return cart
+    rubric: "Identifies the shared mutable default list. Fix uses None then a fresh list."
+
+  - id: reasoning_logic
+    category: reasoning
+    task: |
+      A team runs 4 services. Each needs 2 replicas for failover. Each replica
+      needs 1.5 GB of memory. A node has 8 GB usable. How many nodes are needed
+      and why? Show the arithmetic.
+    rubric: "Correct total memory (12 GB), correct node count (2), arithmetic shown."
+
+  - id: reasoning_tradeoff
+    category: reasoning
+    task: |
+      Give two concrete reasons to pick a message queue over direct HTTP calls
+      between two services, and one reason not to.
+    rubric: "Two valid pro reasons (decoupling, buffering, retries) and one valid con (added operational complexity, latency)."
+
+  - id: longctx_needle
+    category: long_context
+    task: |
+      Below is a config dump. Find the single service whose timeout is set
+      above 30 seconds and report its name and timeout. [config text is
+      appended by the harness at run time in a real run]
+    rubric: "Names the one service over the threshold and its exact timeout value."
+
+  - id: longctx_summarise_repo
+    category: long_context
+    task: |
+      Given several source files, describe in three bullets what the program
+      does end to end. [files appended by the harness at run time]
+    rubric: "Three accurate bullets covering input, processing and output."
+
+  - id: extraction_fields
+    category: extraction
+    task: |
+      Pull the name, email and order total from this text as JSON with keys
+      name, email, total. Text: "Order for Ada Lovelace (ada@calc.io) came to
+      $142.50 after tax."
+    rubric: "Valid JSON, correct name, email and numeric total 142.5."
+
+  - id: extraction_list
+    category: extraction
+    task: |
+      List every file extension mentioned here, once each, as a JSON array:
+      "we ship a .py package, a .md readme, one .yaml config and another .yaml
+      for tests."
+    rubric: "JSON array with .py, .md, .yaml, deduplicated."
+
+  - id: summarize_paragraph
+    category: summarize
+    task: |
+      Summarize in one sentence: "The router removes models that cannot fit
+      the context or lack a needed modality, then scores the rest on
+      capability, price, speed and context fit, with weights that shift by
+      stakes."
+    rubric: "One sentence, keeps the two ideas of filtering then weighted scoring."
+
+  - id: review_patch
+    category: review
+    task: |
+      Review this change and say if it is safe to merge, with one reason.
+      Change: replaces `if x == None:` with `if x is None:` across the file.
+    rubric: "Says safe to merge, reason is that `is None` is the correct identity check."
+
+  - id: plan_feature
+    category: plan
+    task: |
+      Break this goal into 3 to 5 concrete steps: "add rate limiting to a public
+      HTTP API."
+    rubric: "3 to 5 concrete, ordered steps covering limits, storage of counters, and rejection response."
+
+  - id: plan_migration
+    category: plan
+    task: |
+      Outline the steps to move a table from one database to another with no
+      downtime.
+    rubric: "Covers dual writes or replication, backfill, cutover, and verification."

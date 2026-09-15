@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>model-route trace</title>
+<style>
+  /* Dark, large type, meant to be read from the back of a room. No external
+     fonts or assets, so it works on any network or none. */
+  :root {
+    --bg: #0b0e14;
+    --card: #151a24;
+    --card2: #1b2230;
+    --ink: #e8edf4;
+    --dim: #8a94a6;
+    --line: #29303d;
+    --keep: #3fb950;
+    --cost: #58a6ff;
+    --spd: #d29922;
+    --ctx: #bc8cff;
+    --drop: #5a6472;
+    --retry: #d29922;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 18px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; gap: 28px; align-items: baseline; flex-wrap: wrap;
+    padding: 16px 24px; background: #0d1118; border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 22px; margin: 0 24px 0 0; letter-spacing: .5px; }
+  .stat { display: flex; flex-direction: column; }
+  .stat b { font-size: 30px; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  main { padding: 20px 24px 120px; max-width: 1100px; margin: 0 auto; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--keep);
+    border-radius: 10px; padding: 16px 18px; margin: 16px 0;
+    animation: rise .25s ease-out;
+  }
+  .card.failed { border-left-color: #f85149; }
+  .card.retry { border-left-color: var(--retry); margin-left: 34px; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .row1 { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .step { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .agent { font-size: 22px; font-weight: 700; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 20px; background: var(--card2); color: var(--dim); }
+  .badge.ok { color: var(--keep); }
+  .badge.no { color: #f85149; }
+  .retrytag { color: var(--retry); font-size: 14px; }
+  .task { color: var(--dim); margin: 6px 0 4px; font-size: 15px; }
+  .chosen { margin: 10px 0 2px; }
+  .chosen b { font-size: 20px; }
+  .reason { color: var(--ink); background: var(--card2); padding: 8px 12px; border-radius: 8px; margin: 10px 0; font-size: 15px; }
+  .meta { color: var(--dim); font-size: 14px; font-variant-numeric: tabular-nums; }
+  table.cands { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  table.cands td { padding: 4px 8px; vertical-align: middle; font-size: 14px; }
+  .cid { white-space: nowrap; }
+  .winner .cid { color: var(--keep); font-weight: 700; }
+  .bars { display: flex; gap: 10px; }
+  .bar { flex: 1; }
+  .bar .lab { font-size: 11px; color: var(--dim); }
+  .track { height: 8px; background: #0d1118; border-radius: 6px; overflow: hidden; }
+  .fill { height: 100%; }
+  .fill.cap { background: var(--keep); }
+  .fill.cost { background: var(--cost); }
+  .fill.spd { background: var(--spd); }
+  .fill.ctx { background: var(--ctx); }
+  .score { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+  .dropped { margin-top: 10px; color: var(--drop); font-size: 13px; }
+  .dropped div { padding: 2px 0; }
+  .empty { color: var(--dim); text-align: center; margin-top: 80px; font-size: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>model-route</h1>
+  <div class="stat"><b id="cost">$0.0000</b><span>total cost</span></div>
+  <div class="stat"><b id="elapsed">0.0s</b><span>elapsed</span></div>
+  <div class="stat"><b id="calls">0</b><span>calls</span></div>
+  <div class="stat"><b id="models">0</b><span>models used</span></div>
+</header>
+<main id="feed">
+  <div class="empty" id="empty">Waiting for the first event. Run main.py in another terminal.</div>
+</main>
+
+<script>
+// Vanilla JS only. It listens to the Server Sent Events stream and draws one
+// card per trace event. No framework, no build step, nothing to fetch from a
+// CDN that could fail on venue wifi.
+const feed = document.getElementById("feed");
+const empty = document.getElementById("empty");
+let totalCost = 0, calls = 0, firstTs = null, lastTs = null;
+const modelsSeen = new Set();
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g, c => (
+    {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+}
+function clamp01(x) { return Math.max(0, Math.min(1, Number(x) || 0)); }
+
+function bar(label, cls, value) {
+  return `<div class="bar"><div class="lab">${label}</div>
+    <div class="track"><div class="fill ${cls}" style="width:${clamp01(value) * 100}%"></div></div></div>`;
+}
+
+function candidateRow(row, isWinner) {
+  return `<tr class="${isWinner ? "winner" : ""}">
+    <td class="cid">${esc(row.id)}</td>
+    <td><div class="bars">
+      ${bar("cap", "cap", row.capability)}
+      ${bar("cost", "cost", row.cost_score)}
+      ${bar("spd", "spd", row.speed_score)}
+      ${bar("ctx", "ctx", row.ctx_score)}
+    </div></td>
+    <td class="score">${Number(row.score).toFixed(3)}</td>
+  </tr>`;
+}
+
+function render(ev) {
+  const d = ev.decision || {};
+  const r = ev.result || {};
+  const ok = !!r.ok;
+  const card = document.createElement("div");
+  card.className = "card" + (ok ? "" : " failed") + (ev.retry_of ? " retry" : "");
+  card.id = "step-" + ev.step;
+
+  const breakdown = (d.breakdown || []).slice(0, 6);
+  const dropped = (d.filtered_out || []).slice(0, 4);
+
+  const meta = ok
+    ? `<div class="meta">cost $${Number(r.cost || 0).toFixed(5)} &nbsp; latency ${Number(r.latency || 0).toFixed(2)}s &nbsp; ${r.in_tokens || 0} in / ${r.out_tokens || 0} out</div>`
+    : `<div class="meta" style="color:#f85149">${esc(r.error || "failed")}</div>`;
+
+  card.innerHTML = `
+    <div class="row1">
+      <span class="step">step ${ev.step}</span>
+      <span class="agent">${esc(ev.agent)}</span>
+      <span class="badge">${esc(ev.classifier)}</span>
+      <span class="badge ${ok ? "ok" : "no"}">${ok ? "ok" : "failed"}</span>
+      ${ev.retry_of ? `<span class="retrytag">retry of step ${ev.retry_of}</span>` : ""}
+    </div>
+    <div class="task">${esc((ev.task || "").slice(0, 120))}</div>
+    <div class="chosen">chosen: <b>${esc(d.chosen || "(none)")}</b></div>
+    ${meta}
+    <div class="reason">${esc(d.reason || "")}</div>
+    <table class="cands">${breakdown.map(row => candidateRow(row, row.id === d.chosen)).join("")}</table>
+    ${dropped.length ? `<div class="dropped">${dropped.map(x => `<div>dropped ${esc(x.id)}: ${esc(x.reason)}</div>`).join("")}</div>` : ""}
+  `;
+  feed.appendChild(card);
+  card.scrollIntoView({behavior: "smooth", block: "end"});
+}
+
+function updateStats(ev) {
+  const r = ev.result || {};
+  totalCost += Number(r.cost || 0);
+  calls += 1;
+  if (r.model) modelsSeen.add(r.model);
+  if (ev.ts) { if (firstTs === null) firstTs = ev.ts; lastTs = ev.ts; }
+  document.getElementById("cost").textContent = "$" + totalCost.toFixed(4);
+  document.getElementById("calls").textContent = calls;
+  document.getElementById("models").textContent = modelsSeen.size;
+  const secs = (firstTs !== null && lastTs !== null) ? (lastTs - firstTs) : 0;
+  document.getElementById("elapsed").textContent = secs.toFixed(1) + "s";
+}
+
+const source = new EventSource("/events");
+source.onmessage = (msg) => {
+  let ev;
+  try { ev = JSON.parse(msg.data); } catch (e) { return; }
+  if (empty) empty.style.display = "none";
+  render(ev);
+  updateStats(ev);
+};
+source.onerror = () => { /* EventSource retries on its own. */ };
+</script>
+</body>
+</html>

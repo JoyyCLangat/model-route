@@ -1,0 +1,51 @@
+# The only file in the repo that holds a human opinion.
+#
+# Everything else about a model (its price, its context window, whether it
+# takes images) comes live from the OpenRouter catalog. These numbers are the
+# one thing a catalog cannot tell you: how good a family is at a kind of work.
+#
+# They are keyed by family prefix, not by an exact slug, so they survive a
+# version bump. A model is matched to a family by its longest matching prefix.
+# An unknown model gets the neutral "default" block rather than being dropped,
+# so the repo keeps working with any slug a user adds.
+#
+# IMPORTANT: these scores are a starting guess by a human, not measured fact.
+# They are here to be replaced. Run bench/run.py to score models against your
+# own tasks and write evidence into RESULTS.md, then edit these numbers.
+
+dimensions: [code, reasoning, long_context, extraction, vision, speed]
+
+families:
+  anthropic/claude-opus:
+    code: 0.95
+    reasoning: 0.95
+    long_context: 0.8
+    extraction: 0.8
+    vision: 0.8
+    speed: 0.4
+    notes: "Strong on multi-file code edits and careful review."
+  google/gemini:
+    code: 0.8
+    reasoning: 0.85
+    long_context: 0.95
+    extraction: 0.85
+    vision: 0.9
+    speed: 0.9
+    notes: "Very large context and fast. Good first pass over a whole repo."
+  moonshotai/kimi:
+    code: 0.85
+    reasoning: 0.75
+    long_context: 0.8
+    extraction: 0.9
+    vision: 0.7
+    speed: 0.8
+    notes: "Cheap. Good for bulk extraction and wide parallel fan out."
+
+default:
+  code: 0.6
+  reasoning: 0.6
+  long_context: 0.6
+  extraction: 0.6
+  vision: 0.3
+  speed: 0.6
+  notes: "Unknown family, neutral scores."

@@ -1,0 +1,34 @@
+# CI runs with no API key. Everything here works offline, which is the same
+# promise the demo makes to someone who clones it with no credit.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile everything
+        run: python -m compileall .
+
+      # The recorded run replays with no key. If this exits non zero, the
+      # offline path is broken. --speed keeps the timing check quick.
+      - name: Replay the recorded run
+        run: python main.py --replay runs/demo-run.jsonl --no-panel --speed 100
+
+      # The router tests are the proof the idea works. They use a fake registry,
+      # so they need no key and no network.
+      - name: Router unit tests
+        run: python -m unittest tests.test_router -v
