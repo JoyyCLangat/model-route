@@ -1,0 +1,9 @@
+# Standard library plus these six packages. Nothing else, on purpose.
+# The whole point of the repo is that the routing logic is short and readable,
+# so there is no agent framework here.
+httpx
+python-dotenv
+rich
+pyyaml
+fastapi
+uvicorn

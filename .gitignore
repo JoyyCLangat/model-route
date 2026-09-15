@@ -1,0 +1,15 @@
+# Secrets never go in the repo. This line is here from the first commit.
+.env
+
+# Local Python and tooling noise.
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# The live catalog cache. It is fetched at run time, so it is not tracked.
+.cache/
+
+# The live trace log for the current run. It is regenerated every run.
+# Note that runs/demo-run.jsonl IS tracked on purpose, so replay works offline.
+runs/latest.jsonl
